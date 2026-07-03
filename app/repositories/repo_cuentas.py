@@ -1,5 +1,4 @@
 """Consultas SQL de cuentas: ahorro, crédito, movimientos y cronograma."""
-from __future__ import annotations
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
@@ -73,6 +72,8 @@ def listar_movimientos(conn: Connection, pkcuentaahorro: int, limit: int) -> lis
         """
     )
     return [dict(r) for r in conn.execute(sql, {"pk": pkcuentaahorro, "lim": limit}).mappings().all()]
+
+
 def listar_creditos(conn: Connection, pkcliente: int) -> list[dict]:
     """Créditos del cliente en el periodo de cartera (fagcuentacredito).
 
@@ -81,12 +82,11 @@ def listar_creditos(conn: Connection, pkcliente: int) -> list[dict]:
     sql = text(
         """
         SELECT cr.codcuentacredito,
-               fa.fechadesembolsocredito      AS fecha_desembolso,
-               fa.montosaldocapital           AS saldo_capital,
-               fa.montosaldocliente           AS pago_pendiente,
-               fa.diasatrasocredito           AS dias_atraso,
-               fa.tasainterescompensatoria    AS tea,
-               cal.descalificacioncrediticia  AS calificacion
+               fa.fechadesembolsocredito  AS fecha_desembolso,
+               fa.montosaldocapital       AS saldo_capital,
+               fa.montosaldocliente       AS pago_pendiente,
+               fa.diasatrasocredito       AS dias_atraso,
+               cal.descalificacioncrediticia AS calificacion
         FROM dcuentacredito cr
         JOIN fagcuentacredito fa
           ON fa.pkcuentacredito = cr.pkcuentacredito AND fa.periodomes = :periodo

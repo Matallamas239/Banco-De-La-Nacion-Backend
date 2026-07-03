@@ -1,9 +1,13 @@
 """Carga de configuración desde .env usando pydantic-settings."""
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Determine absolute path to .env in backend directory
+base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+env_file_path = os.path.join(base_dir, ".env")
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=env_file_path, env_file_encoding="utf-8", extra="ignore")
 
     DATABASE_URL: str
     SECRET_KEY: str
@@ -18,3 +22,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+

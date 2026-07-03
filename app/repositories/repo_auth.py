@@ -3,7 +3,6 @@
 El cliente vive en dcliente y se autentica vía usuarios_homebanking.
 NO se cruzan dpersonal ni dasesor (universos distintos).
 """
-from __future__ import annotations
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 

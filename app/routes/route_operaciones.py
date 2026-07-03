@@ -13,6 +13,8 @@ from app.schemas.sch_operaciones import (
     ServicioOut,
     TransferenciaRequest,
     TransferenciaResponse,
+    TransferenciaInterbancariaRequest,
+    TransferenciaInterbancariaResponse
 )
 
 router = APIRouter(prefix="/operaciones", tags=["operaciones"], dependencies=[Depends(get_cliente)])
@@ -54,4 +56,21 @@ def pago_servicio(
 ):
     return ctrl_operaciones.pago_servicio(
         conn, cliente["pkcliente"], body.cuenta_origen, body.codservicio, body.codsuministro, body.monto
+    )
+
+@router.post("/transferencia-interbancaria", response_model=TransferenciaInterbancariaResponse)
+def transferencia_interbancaria(
+    body: TransferenciaInterbancariaRequest,
+    conn: Connection = Depends(get_db),
+    cliente: dict = Depends(get_cliente),
+):
+    return ctrl_operaciones.transferencia_interbancaria(
+        conn,
+        cliente["pkcliente"],
+        body.cuenta_origen,
+        body.cuenta_destino,
+        body.banco_destino,
+        body.monto,
+        body.tipo_transferencia,
+        body.rol_usuario
     )
