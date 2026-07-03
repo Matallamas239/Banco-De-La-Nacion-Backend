@@ -1,4 +1,5 @@
 """Utilidades de seguridad: hashing bcrypt directo y JWT (python-jose)."""
+from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import bcrypt

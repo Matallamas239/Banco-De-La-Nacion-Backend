@@ -2,6 +2,7 @@
 
 Alcance: solo Microempresa (ME) y Consumo (CO).
 """
+from __future__ import annotations
 from decimal import Decimal
 import math
 from datetime import datetime, date
@@ -110,7 +111,7 @@ def crear_solicitud(
     fecha_desembolso: str | None = None,
     dia_pago: int | None = None,
 ) -> dict:
-    """Registra una solicitud en dsolicitud (estado inicial 'En Evaluación' o 'En Comité' según monto).
+    """Registra una solicitud en dsolicitud (estado inicial 'En Evaluación').
 
     pksolicitud proviene de dsolicitud_pksolicitud_seq y codsolicitud se deriva
     con 'SOL' || LPAD(currval(...)::text, 7, '0').
@@ -121,6 +122,10 @@ def crear_solicitud(
     if pkproducto is None:
         raise ValueError(f"No hay producto activo para el tipo de crédito '{codtipocredito}'")
 
+    pkestado = _pk_estado_solicitud(conn, ESTADO_EN_EVALUACION)
+    if pkestado is None:
+        raise ValueError("No existe el estado 'En Evaluación' en dsolicitudestado")
+
     pkactividad = _pk_actividad(conn, codactividadeconomica)
     if pkactividad is None:
         raise ValueError(f"Actividad económica '{codactividadeconomica}' no encontrada")
@@ -130,81 +135,6 @@ def crear_solicitud(
     ).scalar()
     pkagencia, pkasesor = _agencia_asesor_del_cliente(conn, pkcliente)
 
-    # ─── EVALUACIÓN DE ELEGIBILIDAD / SCORING Y SEMÁFORO ───
-    # 1. Calcular Cuota Nueva del Crédito
-    tem = Decimal(math.pow(1 + float(tea), 1/12.0) - 1)
-    if tem == 0:
-        new_cuota = montosolicitud / plazo
-    else:
-        new_cuota = montosolicitud * (tem * Decimal(math.pow(1 + float(tem), plazo))) / (Decimal(math.pow(1 + float(tem), plazo)) - 1)
-    new_cuota = round(new_cuota, 2)
-
-    # 2. Obtener cuotas mensuales activas de créditos vigentes
-    active_quotas = conn.execute(
-        text("""
-            SELECT COALESCE(SUM(f1.montocuota), 0)
-            FROM fplanpagomes f1
-            WHERE f1.pkcliente = :pkcliente
-              AND f1.fechapagocuota IS NULL
-              AND f1.nrocuota = (
-                  SELECT MIN(f2.nrocuota)
-                  FROM fplanpagomes f2
-                  WHERE f2.pkcuentacredito = f1.pkcuentacredito
-                    AND f2.fechapagocuota IS NULL
-              )
-        """),
-        {"pkcliente": pkcliente}
-    ).scalar() or Decimal('0.00')
-
-    # 3. Calcular RDS (Ratio Deuda-Ingreso)
-    total_obligaciones = Decimal(active_quotas) + new_cuota
-    if montoingresoneto > 0:
-        rds = (total_obligaciones / montoingresoneto) * 100
-    else:
-        rds = Decimal('999.99')
-
-    # 4. Obtener calificación SBS interna más reciente (peor de sus créditos activos)
-    sbs_val = conn.execute(
-        text("""
-            SELECT COALESCE(MAX(CAST(cal.codcalificacioncrediticia AS INTEGER)), 0)
-            FROM fagcuentacredito fa
-            JOIN dcalificacioncrediticia cal ON cal.pkcalificacioncrediticia = fa.pkcalificacioncrediticiainterna
-            WHERE fa.pkcliente = :pkcliente AND fa.periodomes = :periodo
-        """),
-        {"pkcliente": pkcliente, "periodo": PERIODO_CARTERA}
-    ).scalar() or 0
-
-    sbs_labels = {0: "Normal", 1: "Con Problemas Potenciales (CPP)", 2: "Deficiente", 3: "Dudoso", 4: "Pérdida"}
-    sbs_label = sbs_labels.get(sbs_val, "Normal")
-
-    # 5. Regla Normativa del Semáforo
-    if rds > 40 or sbs_val >= 2:
-        raise ValueError(
-            f"Evaluación de Elegibilidad Fallida: Semáforo ROJO. "
-            f"El Ratio Deuda-Ingreso es de {rds:.1f}% (límite permitido: 40.0%) y su calificación SBS es {sbs_label}."
-        )
-
-    # 6. Determinar nivel de aprobación y estado inicial por monto
-    if montosolicitud > 25000:
-        estado_solicitada = "06"  # En Comité
-        cod_nivel = "N4"          # Comité de Créditos Agencia (Nivel de Comité)
-    elif montosolicitud > 10000:
-        estado_solicitada = "01"  # En Evaluación
-        cod_nivel = "N2"          # Administrador de Agencia (Jefe Regional)
-    else:
-        estado_solicitada = "01"  # En Evaluación
-        cod_nivel = "N1"          # Asesor de Negocios
-
-    pkestado = conn.execute(
-        text("SELECT pksolicitudestado FROM dsolicitudestado WHERE codsolicitudestado = :cod"),
-        {"cod": estado_solicitada}
-    ).scalar()
-
-    pknivel = conn.execute(
-        text("SELECT pknivelaprobacion FROM dnivelaprobacion WHERE codnivelaprobacion = :cod"),
-        {"cod": cod_nivel}
-    ).scalar()
-
     # Registra/actualiza la fuente de ingreso (idempotente) antes de la solicitud.
     upsert_fuente_ingreso(conn, pkcliente, montoingresoneto, pkactividad)
 
@@ -213,7 +143,7 @@ def crear_solicitud(
             """
             INSERT INTO dsolicitud (
                 pksolicitud, codsolicitud, pkcliente, codlineacredito,
-                pksolicitudestado, pknivelaprobacion, pkmoneda, pkproducto,
+                pksolicitudestado, pkmoneda, pkproducto,
                 codtiposolicitud, destiposolicitud,
                 montosolicitudcredito, nrocuotasolicitud, plazosolicitudcredito,
                 fechasolicitudcredito, codususol,
@@ -225,7 +155,7 @@ def crear_solicitud(
                 nextval('dsolicitud_pksolicitud_seq'),
                 'SOL' || LPAD(currval('dsolicitud_pksolicitud_seq')::text, 7, '0'),
                 :pkcliente, 'CR',
-                :pkestado, :pknivel, :pkmoneda, :pkproducto,
+                :pkestado, :pkmoneda, :pkproducto,
                 '01', 'Credito Nuevo',
                 :monto, :plazo, :plazo,
                 CURRENT_DATE, 'HB',
@@ -240,7 +170,6 @@ def crear_solicitud(
         {
             "pkcliente": pkcliente,
             "pkestado": pkestado,
-            "pknivel": pknivel,
             "pkmoneda": pkmoneda,
             "pkproducto": pkproducto,
             "monto": montosolicitud,
@@ -322,8 +251,13 @@ def evaluar_solicitud(conn: Connection, pksolicitud: int) -> dict:
             "saldo_capital": saldo
         })
     conn.commit()
-    return {"cronograma": cronograma, "monto_total": sum(c["monto_cuota"] for c in cronograma)}
 
+    return {
+        "cronograma": cronograma,
+        "monto_total": sum(c["monto_cuota"] for c in cronograma),
+        "tea": float(tea),
+        "tem": float(tem)
+    }
 def desembolsar_solicitud(conn: Connection, pksolicitud: int) -> dict:
     """Crea la cuenta de crédito, el cronograma en fplanpagomes y abona al ahorro."""
     sol = conn.execute(
@@ -333,7 +267,7 @@ def desembolsar_solicitud(conn: Connection, pksolicitud: int) -> dict:
     if not sol:
         raise ValueError("Solicitud no encontrada")
 
-    pkestado_desembolsado = conn.execute(text("SELECT pksolicitudestado FROM dsolicitudestado WHERE codsolicitudestado='04'")).scalar()
+    pkestado_desembolsado = conn.execute(text("SELECT pksolicitudestado FROM dsolicitudestado WHERE codsolicitudestado='03'")).scalar()
     conn.execute(text("UPDATE dsolicitud SET pksolicitudestado = :est WHERE pksolicitud = :pk"), {"est": pkestado_desembolsado, "pk": pksolicitud})
 
     # Crear cuenta credito

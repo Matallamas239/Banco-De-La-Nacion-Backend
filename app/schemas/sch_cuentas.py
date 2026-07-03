@@ -1,4 +1,5 @@
 """Schemas pydantic para consultas de cuentas (ahorro y crédito)."""
+from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
@@ -30,6 +31,7 @@ class CuentaCreditoOut(BaseModel):
     pago_pendiente: Decimal
     dias_atraso: int
     calificacion: str | None = None
+    tea: Decimal | None = None
 
 
 class CuotaOut(BaseModel):

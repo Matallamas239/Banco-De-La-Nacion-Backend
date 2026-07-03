@@ -1,4 +1,5 @@
 """Schemas pydantic para operaciones (pago de cuota, transferencia)."""
+from __future__ import annotations
 from decimal import Decimal
 
 from pydantic import BaseModel, Field
@@ -61,22 +62,3 @@ class TransferenciaResponse(BaseModel):
     monto: Decimal
     pkoperacion_debito: int
     pkoperacion_credito: int
-
-class TransferenciaInterbancariaRequest(BaseModel):
-    cuenta_origen: str
-    cuenta_destino: str
-    banco_destino: str
-    monto: Decimal = Field(..., gt=0)
-    tipo_transferencia: str
-    rol_usuario: str = "TITULAR"
-
-class TransferenciaInterbancariaResponse(BaseModel):
-    mensaje: str
-    cuenta_origen: str
-    cuenta_destino: str
-    banco_destino: str
-    monto: Decimal
-    comision: Decimal
-    total_debitado: Decimal
-    estado: str
-    tipo_transferencia: str

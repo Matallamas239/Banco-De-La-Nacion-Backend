@@ -5,6 +5,7 @@ codtipkar, codkardex (único), codtipoegresoingreso, periododia (FK a dtiempo),
 pkconceptooperacion, pktipooperacion, pkmoneda, pkagenciaorigen,
 montooperacion, montopagoconcepto, fechahoraoperacion.
 """
+from __future__ import annotations
 from decimal import Decimal
 
 from sqlalchemy import text
