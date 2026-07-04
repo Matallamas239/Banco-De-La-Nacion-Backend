@@ -96,6 +96,34 @@ def solicitar_credito(req: SolicitudCreditoRequest, conn: Connection = Depends(g
             dia_pago=req.dia_pago
         )
     except ValueError as e:
+        if isinstance(e, repo_creditos.SemaforoRojoException):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "Evaluación de Elegibilidad Fallida: Semáforo ROJO",
+                    "elegibilidad": {
+                        "motivo": str(e),
+                        "reglas": [
+                            {
+                                "nombre": "Ratio Deuda-Ingreso (RDS)",
+                                "limite": "Máximo 40.0%",
+                                "actual": f"{e.rds:.1f}%",
+                                "cumple": e.rds_ok,
+                                "tipo": "rds",
+                                "monto_maximo_sugerido": round(e.monto_max, 2),
+                                "ingreso_minimo_sugerido": round(e.ingreso_min, 2),
+                            },
+                            {
+                                "nombre": "Calificación crediticia SBS",
+                                "limite": "Normal o CPP",
+                                "actual": e.sbs_label,
+                                "cumple": e.sbs_ok,
+                                "tipo": "sbs",
+                            },
+                        ],
+                    },
+                },
+            )
         if "Semáforo ROJO" in str(e):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

@@ -12,9 +12,24 @@ from sqlalchemy.engine import Connection
 
 from app.repositories.repo_cuentas import PERIODO_CARTERA
 
-# codtipocredito del portal -> codtipocredito en dproducto
 MAPA_TIPO_CREDITO = {"ME": "01", "CO": "03"}  # ME=Microempresa, CO=Consumo
 ESTADO_EN_EVALUACION = "01"  # dsolicitudestado.codsolicitudestado
+
+
+class SemaforoRojoException(ValueError):
+    def __init__(self, rds: float, sbs_label: str, sbs_val: int, rds_ok: bool, sbs_ok: bool, monto_max: float, ingreso_min: float):
+        self.rds = rds
+        self.sbs_label = sbs_label
+        self.sbs_val = sbs_val
+        self.rds_ok = rds_ok
+        self.sbs_ok = sbs_ok
+        self.monto_max = monto_max
+        self.ingreso_min = ingreso_min
+        super().__init__(
+            f"Evaluación de Elegibilidad Fallida: Semáforo ROJO. "
+            f"El Ratio Deuda-Ingreso es de {rds:.1f}% (límite permitido: 40.0%) y su calificación SBS es {sbs_label}."
+        )
+
 
 def listar_solicitudes(conn: Connection) -> list[dict]:
     """Lista todas las solicitudes de crédito."""
@@ -178,10 +193,29 @@ def crear_solicitud(
     sbs_label = sbs_labels.get(sbs_val, "Normal")
 
     # 5. Regla Normativa del Semáforo
-    if rds > 40 or sbs_val >= 2:
-        raise ValueError(
-            f"Evaluación de Elegibilidad Fallida: Semáforo ROJO. "
-            f"El Ratio Deuda-Ingreso es de {rds:.1f}% (límite permitido: 40.0%) y su calificación SBS es {sbs_label}."
+    rds_ok = rds <= 40
+    sbs_ok = sbs_val < 2
+
+    if not rds_ok or not sbs_ok:
+        ingreso_min_comply = total_obligaciones / Decimal('0.40')
+        new_cuota_max = montoingresoneto * Decimal('0.40') - Decimal(active_quotas)
+        monto_max_comply = Decimal('0.00')
+        if new_cuota_max > 0:
+            if tem == 0:
+                monto_max_comply = new_cuota_max * plazo
+            else:
+                factor = (tem * Decimal(math.pow(1 + float(tem), plazo))) / (Decimal(math.pow(1 + float(tem), plazo)) - 1)
+                monto_max_comply = new_cuota_max / factor
+            monto_max_comply = max(Decimal('0.00'), monto_max_comply)
+
+        raise SemaforoRojoException(
+            rds=float(rds),
+            sbs_label=sbs_label,
+            sbs_val=int(sbs_val),
+            rds_ok=bool(rds_ok),
+            sbs_ok=bool(sbs_ok),
+            monto_max=float(monto_max_comply),
+            ingreso_min=float(ingreso_min_comply)
         )
 
     # 6. Determinar nivel de aprobación y estado inicial por monto
